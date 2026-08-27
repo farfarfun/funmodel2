@@ -266,3 +266,6 @@ temp
 .specstory/
 CLAUDE.local.md
 AGENTS.local.md
+
+# runtime cache, recreated automatically by WeightDB (CREATE TABLE IF NOT EXISTS)
+notemodel/database/layer_weight.db
