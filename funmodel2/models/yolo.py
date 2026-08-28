@@ -2,8 +2,8 @@ import hashlib
 
 import numpy as np
 
-from funkeras.model.yolo3 import YoloBody
-from funkeras.utils import read_lines
+from notekeras.model.yolo3 import YoloBody
+from notekeras.utils import read_lines
 from funmodel2.database import set_weight_path
 
 set_weight_path("/Users/liangtaoniu/workspace/MyDiary/src/tianchi/live/data/weights")
