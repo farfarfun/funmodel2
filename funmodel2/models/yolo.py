@@ -4,7 +4,7 @@ import numpy as np
 
 from notekeras.model.yolo3 import YoloBody
 from notekeras.utils import read_lines
-from notemodel.database import set_weight_path
+from funmodel2.database import set_weight_path
 
 set_weight_path("/Users/liangtaoniu/workspace/MyDiary/src/tianchi/live/data/weights")
 # import tensorflow as tf
