@@ -15,7 +15,7 @@ twine upload dist/*
 
 
 
-rm -rf notekeras.egg-info
+rm -rf funmodel2.egg-info
 rm -rf dist
 rm -rf build
 
