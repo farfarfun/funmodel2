@@ -131,7 +131,7 @@ def load_layers(layers: Iterable[Any], model_name: str, md5_list: list[str]) -> 
             index += 1
             if not records:
                 continue
-            _, _, _, md5, filename = records[0]
+            _, _, _, _, md5, filename = records[0]
             file_path = get_file_path(filename)
             if not os.path.exists(file_path):
                 logger.warning("权重文件不存在: %s", file_path)
