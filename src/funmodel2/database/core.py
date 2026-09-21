@@ -1,190 +1,149 @@
+"""SQLite 缓存模型层权重元数据。"""
+
 import hashlib
 import os
 import pickle
 import sqlite3
+from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 from farlog import getLogger
-from tqdm import tqdm
 
-logger = getLogger(__name__)
-
+logger = getLogger("funmodel2")
 weight_path: str | None = None
 
 
-def set_weight_path(path: str) -> None:
-    """设置权重文件的存放目录。"""
+def set_weight_path(path: str | os.PathLike[str]) -> None:
+    """设置权重文件目录。"""
     global weight_path
-    weight_path = path
+    weight_path = os.fspath(path)
 
 
 def get_file_path(filename: str) -> str:
-    """根据 `set_weight_path` 设置的目录拼出权重文件的完整路径，未设置时回退到包内 `temp/` 目录。"""
-    file_dir = weight_path or os.path.abspath(os.path.dirname(__file__)) + '/../../temp/'
-    return os.path.join(file_dir, filename)
+    """根据文件名返回权重文件路径。"""
+    directory = weight_path or os.path.join(os.path.dirname(__file__), "temp")
+    return os.path.join(directory, filename)
 
 
-def save_weight(data: Any) -> None:
-    """把权重数据序列化到本地文件。"""
-    pickle.dump(data, open('file_path', 'wb'))
+def save_weight(data: Any, file_path: str) -> None:
+    """将权重数据序列化到指定文件。"""
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(file_path, "wb") as output:
+        pickle.dump(data, output)
 
 
 class WeightDB:
-    """基于 SQLite 的模型层权重去重缓存，按每层权重的 MD5 记录存储位置，避免重复保存相同权重块。"""
+    """保存模型层权重元数据的 SQLite 数据库。"""
 
-    def __init__(self, db_path: str | None = None) -> None:
-        if db_path is None:
-            db_path = os.path.abspath(os.path.dirname(__file__)) + '/layer_weight.db'
-        self.db_path = db_path
-
+    def __init__(self, db_path: str | os.PathLike[str] | None = None) -> None:
+        """创建数据库连接。"""
+        self.db_path = os.fspath(db_path or os.path.join(os.path.dirname(__file__), "layer_weight.db"))
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.db_path)
-        self.cursor = self.conn.cursor()
         self.table_name = "layer_weight"
         self.create()
 
-    def execute(self, sql: str) -> sqlite3.Cursor:
-        """执行一条 SQL 并提交事务。"""
-        self.conn.commit()
-        return self.cursor.execute(sql)
-
     def create(self) -> None:
-        """创建权重记录表（若不存在）。"""
-        self.execute("""
-        create table if not exists {} (
-            id                  integer primary key AUTOINCREMENT
-           ,model               varchar(200)
-           ,class               varchar(200)
-           ,name                varchar(200)  DEFAULT ('')
-           ,md5                 varchar(200)  DEFAULT ('')
-           ,filename            varchar(200)  DEFAULT ('')
-           )
-        """.format(self.table_name))
+        """创建权重元数据表。"""
+        self.conn.execute(f"""create table if not exists {self.table_name} (
+            id integer primary key autoincrement,
+            model text not null, class text not null, name text not null default '',
+            md5 text not null default '', filename text not null default '')""")
+        self.conn.commit()
 
-    def insert(self, model: str = '', _class: str = '', name: str = '', md5: str = '', filename: str = '') -> sqlite3.Cursor:
-        """插入一条权重记录。"""
-        name = name.replace("'", '')
-        res = self.execute(
-            """insert into {} (model,class,name,md5,filename) values ('{}','{}','{}','{}','{}')
-            """.format(self.table_name, model, _class, name, md5, filename)
-        )
-        return res
+    def insert(self, model: str = "", _class: str = "", name: str = "", md5: str = "", filename: str = "") -> None:
+        """插入一条权重元数据记录。"""
+        self.conn.execute(f"insert into {self.table_name} (model,class,name,md5,filename) values (?,?,?,?,?)",
+                          (model, _class, name, md5, filename))
+        self.conn.commit()
 
-    def insert_if_not_exist(self, model: str = '', _class: str = '', name: str = '', md5: str = '', filename: str = '') -> bool:
-        """若同名同 MD5 的记录不存在则插入，返回是否发生了插入。"""
-        name = name.replace("'", '')
-        res = self.execute(
-            """select * from {} where model='{}' and class='{}' and name='{}' and md5='{}' and filename='{}' limit 10
-            """.format(self.table_name, model, _class, name, md5, filename)
-        )
-        if len(list(res)) == 0:
-            self.insert(model, _class, name, md5, filename)
-            return True
-        return False
+    def insert_if_not_exist(self, model: str = "", _class: str = "", name: str = "", md5: str = "", filename: str = "") -> bool:
+        """仅在相同记录不存在时插入，并返回是否插入。"""
+        exists = self.conn.execute(
+            f"select 1 from {self.table_name} where model=? and class=? and name=? and md5=? and filename=? limit 1",
+            (model, _class, name, md5, filename)).fetchone()
+        if exists:
+            return False
+        self.insert(model, _class, name, md5, filename)
+        return True
 
-    def select_by_name(self, model: str = '', _class: str = '', name: str = '') -> list[tuple]:
-        """按模型名/类名/层名查询权重记录。"""
-        name = name.replace("'", '')
-        res = self.execute(
-            """select * from {} where model='{}' and class='{}' and name='{}' limit 10
-            """.format(self.table_name, model, _class, name)
-        )
+    def select_by_name(self, model: str = "", _class: str = "", name: str = "") -> list[tuple[Any, ...]]:
+        """按模型、层类型和层名称查询记录。"""
+        return self.conn.execute(f"select * from {self.table_name} where model=? and class=? and name=? limit 10",
+                                 (model, _class, name)).fetchall()
 
-        return list(res)
+    def select_by_md5(self, model: str = "", md5: str = "") -> list[tuple[Any, ...]]:
+        """按模型和权重 MD5 查询记录。"""
+        return self.conn.execute(f"select * from {self.table_name} where model=? and md5=? limit 10",
+                                 (model, md5)).fetchall()
 
-    def select_by_md5(self, model: str = '', md5: str = '') -> list[tuple]:
-        """按模型名/MD5 查询权重记录。"""
-        res = self.execute(
-            """select * from {} where model='{}' and md5='{}' limit 10
-            """.format(self.table_name, model, md5)
-        )
+    def count(self) -> int:
+        """返回数据库中的记录数。"""
+        return self.conn.execute(f"select count(*) from {self.table_name}").fetchone()[0]
 
-        return list(res)
-
-    def count(self) -> list:
-        res = self.execute("""select count(1) from  {}""".format(self.table_name))
-
-        urls = []
-        return urls
-
-    def select(self, size: int = 50) -> list[tuple]:
-        """列出最多 `size` 条权重记录的 (class, name) 组。"""
-        res = self.execute("""select * from  {} limit {} """.format(self.table_name, size))
-
-        urls = []
-        for line in res:
-            urls.append((line[1], line[2]))
-        return urls
+    def select(self, size: int = 50) -> list[tuple[str, str]]:
+        """返回指定数量的模型和层名称。"""
+        if size < 0:
+            raise ValueError("size must be non-negative")
+        rows = self.conn.execute(f"select model, class from {self.table_name} limit ?", (size,)).fetchall()
+        return [(row[0], row[1]) for row in rows]
 
     def close(self) -> None:
-        """关闭数据库连接。"""
-        self.cursor.close()
+        """提交并关闭数据库连接。"""
+        self.conn.commit()
         self.conn.close()
 
 
-def save_layers(layers: list, model_name: str, filename: str) -> None:
-    """把 Keras 模型各层的权重按 MD5 去重后写入 `WeightDB` 并序列化保存到磁盘。"""
-    layerWeight = WeightDB()
-    layerWeight.create()
-
-    data = {}
-    for layer in layers:
-        if len(layer.weights) == 0:
-            continue
-        m = hashlib.md5()
-        weight_array = []
-        for weight in layer.weights:
-            m.update(weight.numpy())
-            weight_array.append(weight.numpy())
-        md5 = m.hexdigest()
-        name = layer.name
-        _class = type(layer)._keras_api_names[-1]
-
-        insert = layerWeight.insert_if_not_exist(model=model_name, _class=_class, name=name, md5=md5, filename=filename)
-        data[md5] = weight_array
-        logger.info("{} {}".format(insert, md5))
-    logger.info(layerWeight.count())
-    layerWeight.close()
-    file_path = get_file_path(filename)
-    logger.info("save to {}".format(file_path))
-    pickle.dump(data, open(file_path, 'wb'))
+def _layer_md5(layer: Any) -> tuple[str, list[Any]]:
+    values = [weight.numpy() for weight in layer.weights]
+    digest = hashlib.md5()
+    for value in values:
+        digest.update(value)
+    return digest.hexdigest(), values
 
 
-def load_layers(layers: list, model_name: str, md5_list: list[str]) -> None:
-    """按 MD5 列表从 `WeightDB` 中找回对应权重文件，并加载回模型各层。"""
-    layerWeight = WeightDB()
-    layerWeight.create()
+def save_layers(layers: Iterable[Any], model_name: str, filename: str) -> None:
+    """保存模型各层权重并记录去重元数据。"""
+    database = WeightDB()
+    data: dict[str, list[Any]] = {}
+    try:
+        for layer in layers:
+            if not layer.weights:
+                continue
+            md5, values = _layer_md5(layer)
+            database.insert_if_not_exist(model_name, type(layer).__name__, layer.name, md5, filename)
+            data[md5] = values
+        save_weight(data, get_file_path(filename))
+    finally:
+        database.close()
 
-    md5_i = -1
-    for layer in tqdm(layers, desc='load weight'):
-        if len(layer.weights) == 0 or md5_i >= len(md5_list) - 1:
-            continue
-        md5_i += 1
 
-        res = layerWeight.select_by_md5(model_name, md5_list[md5_i])
-        # name = layer.name
-        # _class = type(layer)._keras_api_names[-1]
-        # res = layerWeight.select_by_name(model_name, _class, name)
-        if len(res) == 0:
-            continue
-        elif len(res) > 1:
-            logger.warning("error")
-
-        md5, filename = res[0][4], res[0][5]
-        file_path = get_file_path(filename)
-
-        if not os.path.exists(file_path):
-            logger.warning('file not exist downloading to {}'.format(file_path))
-
-        if os.path.exists(file_path):
-            data = pickle.load(open(file_path, 'rb'))
-
-            if md5 in data.keys():
-                try:
-                    layer.set_weights(data[md5])
-                    # [K.set_value(weight, np.array(data[md5][i])) for i, weight in enumerate(layer.weights)]
-                except (ValueError, TypeError) as e:
-                    logger.error(e)
-            else:
-                logger.warning('layer weight not find')
-        else:
-            logger.warning('file not exist')
+def load_layers(layers: Iterable[Any], model_name: str, md5_list: list[str]) -> None:
+    """按 MD5 从缓存恢复模型层权重，缺失记录时跳过并记录警告。"""
+    database = WeightDB()
+    try:
+        index = 0
+        for layer in layers:
+            if not layer.weights or index >= len(md5_list):
+                continue
+            records = database.select_by_md5(model_name, md5_list[index])
+            index += 1
+            if not records:
+                continue
+            _, _, _, md5, filename = records[0]
+            file_path = get_file_path(filename)
+            if not os.path.exists(file_path):
+                logger.warning("权重文件不存在: %s", file_path)
+                continue
+            with open(file_path, "rb") as source:
+                data = pickle.load(source)
+            if md5 not in data:
+                logger.warning("权重摘要不存在: %s", md5)
+                continue
+            try:
+                layer.set_weights(data[md5])
+            except (TypeError, ValueError) as error:
+                logger.warning("设置层权重失败 %s: %s", getattr(layer, "name", "unknown"), error)
+    finally:
+        database.close()

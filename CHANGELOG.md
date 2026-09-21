@@ -1,15 +1,20 @@
-# Changelog
+# 更新日志
 
 ## [Unreleased]
 
-### 变更
+### 新增
 
-- **破坏性变更**：导入名与 PyPI 包名从 `notemodel` 改为 `funmodel2`，与仓库名保持一致（仓库名一直带着结尾的 "2"，旧导入名却没有）。原先 `import notemodel` / `pip install notemodel` 的用法需改为 `import funmodel2` / `pip install funmodel2`。
-- 旧的 `notemodel` PyPI 包后续需要发布一个转发到 `funmodel2` 的终版本——**该操作需仓库/PyPI 包拥有者手动完成**，本次未自动发布（同类先例见 farfarfun/todo-list#401）。
-- 迁移为 `src/funmodel2/` 布局；`numpy`/`funkeras`/`tqdm` 补上版本下限，新增 `farlog` 依赖并生成 `uv.lock`。
+- 增加权重数据库和 YOLO 辅助 API 的正常路径测试。
 
 ### 修复
 
-- `funmodel2/models/yolo.py` 不再在 import 时硬编码本机路径并自动加载模型权重，逻辑收进 `compare_yolo_weights()`，路径通过参数/环境变量传入。
-- `script/build.sh` 改用 `funbuild`，移除遗留的 `setup.py`/`twine` 流程；`script/build.sh`、`script/push.sh` 中自动 `git commit`/`git push -f` 的危险自动化已移除。
-- `database/core.py` 中的 `print()` 诊断输出改为 `farlog`，`except Exception` 收窄为具体异常类型。
+- 移除 import 阶段的本机路径和模型加载副作用，改为显式调用。
+- 使用参数化 SQL、farlog 和具体异常处理，避免数据损坏与诊断信息丢失。
+
+### 变更
+
+- **破坏性变更：** 导入包和分发名称从 `notemodel` 改为 `funmodel2`。旧包转发发布属于历史迁移事项，当前仓库仅维护 `funmodel2`。
+
+### 废弃
+
+- 删除旧的 setup.py/twine 发布脚本及自动提交、强制推送脚本。

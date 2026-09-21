@@ -1,18 +1,20 @@
 [project]
 name = "funmodel2"
 version = "0.1.1"
-description = "YOLOv3 模型层权重去重缓存工具（历史天池比赛实验代码，非通用库）"
+description = "funmodel2"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "牛哥", email = "farfarfun@qq.com" }]
 dependencies = [
+    "farlog>=1.1.7",
     "numpy>=1.24",
-    "funkeras>=0.9.0",
-    "tqdm>=4.60",
-    "farlog>=1.1.8",
+    "tqdm>=4.66",
 ]
+
+[project.optional-dependencies]
+yolo = ["funkeras>=0.1.0"]
 
 [build-system]
 requires = ["hatchling"]
