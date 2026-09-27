@@ -16,7 +16,9 @@
 
 ### 变更
 
-- **破坏性变更：** 导入包和分发名称从 `notemodel` 改为 `funmodel2`。旧包转发发布属于历史迁移事项，当前仓库仅维护 `funmodel2`。
+- **破坏性变更：** 导入包和分发名称从 `notemodel` 改为 `funmodel2`。
+  迁移时卸载 `notemodel`、安装 `funmodel2`，并将 `import notemodel` 替换为
+  `import funmodel2`，将 `notemodel.models` 替换为 `funmodel2.models`。
 
 ### 废弃
 

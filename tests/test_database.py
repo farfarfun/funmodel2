@@ -27,6 +27,11 @@ def test_select_by_md5_and_by_name(db):
     assert len(db.select_by_md5(model="m", md5="does-not-exist")) == 0
 
 
+def test_select_rejects_negative_size(db):
+    with pytest.raises(ValueError, match="non-negative"):
+        db.select(size=-1)
+
+
 class _FakeWeight:
     def __init__(self, array: np.ndarray):
         self._array = array
@@ -71,3 +76,16 @@ def test_save_layers_then_load_layers_round_trip(tmp_path):
     load_layers([target_layer], model_name="yolov3", md5_list=[md5])
 
     np.testing.assert_array_equal(target_layer._raw_weights[0], np.array([1.0, 2.0, 3.0]))
+
+
+def test_load_layers_skips_missing_cache_file(tmp_path):
+    set_weight_path(str(tmp_path))
+    db_path = tmp_path / "layer_weight.db"
+    db = WeightDB(db_path=db_path)
+    db.insert(model="m", _class="Conv2D", name="c1", md5="missing", filename="missing.bin")
+    db.close()
+
+    layer = _FakeLayer("conv1", [np.zeros(3)])
+    load_layers([layer], model_name="m", md5_list=["missing"])
+
+    np.testing.assert_array_equal(layer._raw_weights[0], np.zeros(3))

@@ -8,6 +8,16 @@
 
 ## 安装
 
+旧包 `notemodel` 已更名为 `funmodel2`。迁移时卸载旧包并安装新包：
+
+```bash
+uv pip uninstall notemodel
+uv add funmodel2
+```
+
+将代码中的导入统一替换：`import notemodel` 改为 `import funmodel2`，
+`notemodel.models` 改为 `funmodel2.models`。旧包转发发布及弃用提示由维护者另行处理。
+
 使用 uv 安装依赖并构建：
 
 ```bash
