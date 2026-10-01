@@ -4,6 +4,7 @@ import pickle
 import numpy as np
 import pytest
 
+from funmodel2.database import core as database_core
 from funmodel2.database import WeightDB, load_layers, save_layers, set_weight_path
 
 
@@ -59,7 +60,14 @@ def _tag_class(layer: _FakeLayer, keras_api_name: str) -> _FakeLayer:
     return layer
 
 
-def test_save_layers_then_load_layers_round_trip(tmp_path):
+def _use_temporary_database(monkeypatch, tmp_path):
+    db_path = tmp_path / "layer_weight.db"
+    monkeypatch.setattr(database_core, "WeightDB", lambda: WeightDB(db_path=db_path))
+    return db_path
+
+
+def test_save_layers_then_load_layers_round_trip(monkeypatch, tmp_path):
+    _use_temporary_database(monkeypatch, tmp_path)
     set_weight_path(str(tmp_path))
 
     layer = _tag_class(_FakeLayer("conv1", [np.array([1.0, 2.0, 3.0])]), "Conv2D")
@@ -78,9 +86,9 @@ def test_save_layers_then_load_layers_round_trip(tmp_path):
     np.testing.assert_array_equal(target_layer._raw_weights[0], np.array([1.0, 2.0, 3.0]))
 
 
-def test_load_layers_skips_missing_cache_file(tmp_path):
+def test_load_layers_skips_missing_cache_file(monkeypatch, tmp_path):
     set_weight_path(str(tmp_path))
-    db_path = tmp_path / "layer_weight.db"
+    db_path = _use_temporary_database(monkeypatch, tmp_path)
     db = WeightDB(db_path=db_path)
     db.insert(model="m", _class="Conv2D", name="c1", md5="missing", filename="missing.bin")
     db.close()
@@ -89,3 +97,51 @@ def test_load_layers_skips_missing_cache_file(tmp_path):
     load_layers([layer], model_name="m", md5_list=["missing"])
 
     np.testing.assert_array_equal(layer._raw_weights[0], np.zeros(3))
+
+
+@pytest.mark.parametrize("cached_data", [{"other": [np.ones(3)]}, None])
+def test_load_layers_skips_missing_or_corrupt_cached_data(monkeypatch, tmp_path, cached_data):
+    set_weight_path(tmp_path)
+    db_path = _use_temporary_database(monkeypatch, tmp_path)
+    db = WeightDB(db_path=db_path)
+    db.insert(model="m", _class="Conv2D", name="c1", md5="wanted", filename="cache.bin")
+    db.close()
+
+    cache_path = tmp_path / "cache.bin"
+    if cached_data is None:
+        cache_path.write_bytes(b"not a pickle")
+    else:
+        with open(cache_path, "wb") as output:
+            pickle.dump(cached_data, output)
+
+    layer = _FakeLayer("conv1", [np.zeros(3)])
+    load_layers([layer], model_name="m", md5_list=["wanted"])
+
+    np.testing.assert_array_equal(layer._raw_weights[0], np.zeros(3))
+
+
+def test_load_layers_skips_set_weights_failure(monkeypatch, tmp_path):
+    class FailingLayer(_FakeLayer):
+        def set_weights(self, data):
+            raise ValueError("incompatible weights")
+
+    _use_temporary_database(monkeypatch, tmp_path)
+    set_weight_path(tmp_path)
+    source = _FakeLayer("conv1", [np.ones(3)])
+    save_layers([source], model_name="m", filename="cache.bin")
+    md5 = next(iter(pickle.loads((tmp_path / "cache.bin").read_bytes())))
+
+    target = FailingLayer("conv1", [np.zeros(3)])
+    load_layers([target], model_name="m", md5_list=[md5])
+
+    np.testing.assert_array_equal(target._raw_weights[0], np.zeros(3))
+
+
+def test_set_weight_path_controls_saved_file_location(monkeypatch, tmp_path):
+    _use_temporary_database(monkeypatch, tmp_path)
+    configured_path = tmp_path / "weights"
+    set_weight_path(configured_path)
+
+    save_layers([_FakeLayer("conv1", [np.ones(1)])], model_name="m", filename="cache.bin")
+
+    assert (configured_path / "cache.bin").is_file()
