@@ -269,3 +269,4 @@ AGENTS.local.md
 
 # runtime cache, recreated automatically by WeightDB (CREATE TABLE IF NOT EXISTS)
 funmodel2/database/layer_weight.db
+uv.lock
