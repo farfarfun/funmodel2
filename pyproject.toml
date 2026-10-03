@@ -1,7 +1,7 @@
 [project]
 name = "funmodel2"
 version = "0.1.1"
-description = "funmodel2"
+description = "基于 SQLite 的模型层权重缓存与 YOLOv3 辅助工具"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

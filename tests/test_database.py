@@ -1,6 +1,4 @@
 import os
-import pickle
-
 import numpy as np
 import pytest
 
@@ -75,10 +73,10 @@ def test_save_layers_then_load_layers_round_trip(monkeypatch, tmp_path):
 
     saved_path = tmp_path / "yolov3.weight"
     assert saved_path.exists()
-    with open(saved_path, "rb") as f:
-        data = pickle.load(f)
-    assert len(data) == 1
-    (md5,) = data.keys()
+    with np.load(saved_path, allow_pickle=False) as data:
+        assert len(data.files) == 1
+        (key,) = data.files
+    md5, _ = key.split(":")
 
     target_layer = _FakeLayer("conv1", [np.zeros(3)])
     load_layers([target_layer], model_name="yolov3", md5_list=[md5])
@@ -109,10 +107,9 @@ def test_load_layers_skips_missing_or_corrupt_cached_data(monkeypatch, tmp_path,
 
     cache_path = tmp_path / "cache.bin"
     if cached_data is None:
-        cache_path.write_bytes(b"not a pickle")
+        cache_path.write_bytes(b"not an npz archive")
     else:
-        with open(cache_path, "wb") as output:
-            pickle.dump(cached_data, output)
+        np.savez_compressed(cache_path, **{"other:0": cached_data["other"][0]})
 
     layer = _FakeLayer("conv1", [np.zeros(3)])
     load_layers([layer], model_name="m", md5_list=["wanted"])
@@ -129,7 +126,8 @@ def test_load_layers_skips_set_weights_failure(monkeypatch, tmp_path):
     set_weight_path(tmp_path)
     source = _FakeLayer("conv1", [np.ones(3)])
     save_layers([source], model_name="m", filename="cache.bin")
-    md5 = next(iter(pickle.loads((tmp_path / "cache.bin").read_bytes())))
+    with np.load(tmp_path / "cache.bin", allow_pickle=False) as data:
+        md5, _ = data.files[0].split(":")
 
     target = FailingLayer("conv1", [np.zeros(3)])
     load_layers([target], model_name="m", md5_list=[md5])
@@ -145,3 +143,17 @@ def test_set_weight_path_controls_saved_file_location(monkeypatch, tmp_path):
     save_layers([_FakeLayer("conv1", [np.ones(1)])], model_name="m", filename="cache.bin")
 
     assert (configured_path / "cache.bin").is_file()
+
+
+@pytest.mark.parametrize("filename", ["../outside.bin", "/tmp/outside.bin", "nested/cache.bin", ""])
+def test_save_layers_rejects_unsafe_filename(monkeypatch, tmp_path, filename):
+    _use_temporary_database(monkeypatch, tmp_path)
+    set_weight_path(tmp_path)
+
+    with pytest.raises(ValueError, match="basename"):
+        save_layers([_FakeLayer("conv1", [np.ones(1)])], model_name="m", filename=filename)
+
+
+def test_database_rejects_unsafe_filename(db):
+    with pytest.raises(ValueError, match="basename"):
+        db.insert(model="m", filename="../outside.bin")

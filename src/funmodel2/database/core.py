@@ -2,16 +2,22 @@
 
 import hashlib
 import os
-import pickle
 import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from farlog import getLogger
 
 logger = getLogger("funmodel2")
 weight_path: str | None = None
+
+
+def _cache_directory() -> Path:
+    """返回运行时缓存目录，避免向安装包目录写入文件。"""
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "funmodel2"
 
 
 def set_weight_path(path: str | os.PathLike[str]) -> None:
@@ -36,8 +42,18 @@ def get_file_path(filename: str) -> str:
     返回:
         配置目录下的权重文件路径。
     """
-    directory = weight_path or os.path.join(os.path.dirname(__file__), "temp")
-    return os.path.join(directory, filename)
+    file_name = Path(filename)
+    if not filename or file_name.is_absolute() or file_name.name != filename or filename in {".", ".."}:
+        raise ValueError(f"filename must be a non-empty basename: {filename!r}")
+
+    directory = Path(weight_path) if weight_path is not None else _cache_directory() / "weights"
+    directory = directory.resolve()
+    path = (directory / file_name).resolve()
+    try:
+        path.relative_to(directory)
+    except ValueError as error:
+        raise ValueError(f"filename escapes the configured weight directory: {filename!r}") from error
+    return os.fspath(path)
 
 
 def save_weight(data: Any, file_path: str) -> None:
@@ -52,14 +68,19 @@ def save_weight(data: Any, file_path: str) -> None:
     """
     Path(file_path).parent.mkdir(parents=True, exist_ok=True)
     with open(file_path, "wb") as output:
-        pickle.dump(data, output)
+        arrays = {
+            f"{md5}:{index}": np.asarray(value)
+            for md5, values in data.items()
+            for index, value in enumerate(values)
+        }
+        np.savez_compressed(output, **arrays)
 
 
 class WeightDB:
     """保存模型层权重元数据的 SQLite 数据库。
 
     参数:
-        db_path: SQLite 数据库路径；不传时使用包内默认路径。
+        db_path: SQLite 数据库路径；不传时使用用户缓存目录。
 
     返回:
         可用于读写权重元数据的数据库实例。
@@ -69,12 +90,12 @@ class WeightDB:
         """创建数据库连接并初始化元数据表。
 
         参数:
-            db_path: SQLite 数据库路径；不传时使用包内默认路径。
+            db_path: SQLite 数据库路径；不传时使用用户缓存目录。
 
         返回:
             无。
         """
-        self.db_path = os.fspath(db_path or os.path.join(os.path.dirname(__file__), "layer_weight.db"))
+        self.db_path = os.fspath(db_path or _cache_directory() / "layer_weight.db")
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.db_path)
         self.table_name = "layer_weight"
@@ -105,6 +126,8 @@ class WeightDB:
         返回:
             无。
         """
+        if filename:
+            get_file_path(filename)
         self.conn.execute(f"insert into {self.table_name} (model,class,name,md5,filename) values (?,?,?,?,?)",
                           (model, _class, name, md5, filename))
         self.conn.commit()
@@ -249,17 +272,26 @@ def load_layers(layers: Iterable[Any], model_name: str, md5_list: list[str]) -> 
             if not records:
                 continue
             _, _, _, _, md5, filename = records[0]
-            file_path = get_file_path(filename)
+            try:
+                file_path = get_file_path(filename)
+            except ValueError as error:
+                logger.warning("忽略不安全的权重文件名 {}: {}", filename, error)
+                continue
             if not os.path.exists(file_path):
                 logger.warning("权重文件不存在: {}", file_path)
                 continue
             try:
-                with open(file_path, "rb") as source:
-                    data = pickle.load(source)
-            except (OSError, EOFError, pickle.UnpicklingError) as error:
+                with np.load(file_path, allow_pickle=False) as source:
+                    prefix = f"{md5}:"
+                    keys = sorted(
+                        (key for key in source.files if key.startswith(prefix)),
+                        key=lambda key: int(key.removeprefix(prefix)),
+                    )
+                    data = [source[key] for key in keys]
+            except (OSError, ValueError, EOFError) as error:
                 logger.warning("读取权重缓存失败 {}: {}", file_path, error)
                 continue
-            if md5 not in data:
+            if not data:
                 logger.warning("权重摘要不存在: {}", md5)
                 continue
             try:

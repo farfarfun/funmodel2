@@ -8,15 +8,14 @@
 
 ## 安装
 
-旧包 `notemodel` 已更名为 `funmodel2`。迁移时卸载旧包并安装新包：
+旧包 `notemodel` 已更名为 `funmodel2`。当前版本尚未发布到 PyPI，请从源码安装：
 
 ```bash
-uv pip uninstall notemodel
-uv add funmodel2
+uv sync
 ```
 
 将代码中的导入统一替换：`import notemodel` 改为 `import funmodel2`，
-`notemodel.models` 改为 `funmodel2.models`。旧包转发发布及弃用提示由维护者另行处理。
+`notemodel.models` 改为 `funmodel2.models`。旧包的最终转发版本和弃用提示需要在发布流程中处理。
 
 使用 uv 安装依赖并构建：
 
@@ -32,15 +31,15 @@ uv run python -c "from funmodel2.models.yolo import get_anchors; print(get_ancho
 ```python
 from funmodel2.database import WeightDB, save_layers, load_layers, set_weight_path
 
-set_weight_path("/path/to/weights")  # 权重文件的存放目录
+set_weight_path("/path/to/weights")  # 权重文件的存放目录；文件名仅可为单个基名
 
-db = WeightDB()  # 默认在包目录下建 layer_weight.db
+db = WeightDB()  # 默认在 $XDG_CACHE_HOME/funmodel2（或 ~/.cache/funmodel2）建 layer_weight.db
 db.insert_if_not_exist(model="yolov3", _class="Conv2D", name="conv1", md5="...", filename="yolov3.weight")
 ```
 
 `save_layers(layers, model_name, filename)` / `load_layers(layers, model_name, md5_list)` 用于把 Keras 模型各层的权重按 MD5 存进 / 取出 `WeightDB`，从而在多个模型间共享相同的权重块，避免重复保存。
 
-`funmodel2/models/yolo.py` 中的 YOLOv3 加载脚本仍是历史实验记录；调用 `load_yolo_models` 时需要提供实际权重路径和类别文件。
+`funmodel2/models/yolo.py` 中的 YOLOv3 加载脚本仍是历史实验记录；调用 `load_yolo_models` 时需要提供实际权重路径，默认使用包内的 COCO 类别文件。权重缓存采用安全的 NPZ 数组格式，旧的 pickle 缓存不会被读取，应重新生成。
 
 ---
 
