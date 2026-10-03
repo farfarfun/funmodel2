@@ -1,6 +1,7 @@
 """YOLOv3 实验辅助函数，不会在导入时加载模型或访问本机路径。"""
 
 import hashlib
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -31,12 +32,12 @@ def get_anchors() -> np.ndarray:
     return np.array([float(value) for value in values.split(",")]).reshape(-1, 2)
 
 
-def load_yolo_models(weights_path: str | Path, classes_path: str | Path = "coco.names") -> tuple[Any, Any]:
+def load_yolo_models(weights_path: str | Path, classes_path: str | Path | None = None) -> tuple[Any, Any]:
     """显式加载两个 YOLOv3 模型用于历史权重实验。
 
     参数:
         weights_path: 第一个模型要加载的权重文件路径。
-        classes_path: 每行一个类别名称的文件路径。
+        classes_path: 每行一个类别名称的文件路径；不传时使用包内的 COCO 类别文件。
 
     返回:
         已加载完整权重的模型和按层恢复权重的模型。
@@ -45,7 +46,12 @@ def load_yolo_models(weights_path: str | Path, classes_path: str | Path = "coco.
     from funkeras.utils import read_lines
 
     weights_path = Path(weights_path)
-    classes = read_lines(str(classes_path))
+    classes_file = (
+        Path(classes_path)
+        if classes_path is not None
+        else Path(str(files("funmodel2.models").joinpath("coco.names")))
+    )
+    classes = read_lines(str(classes_file))
     set_weight_path(str(weights_path.parent))
     anchors = get_anchors()
     first = YoloBody(anchors=anchors, num_classes=len(classes))
