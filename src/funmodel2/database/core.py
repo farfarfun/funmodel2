@@ -251,20 +251,20 @@ def load_layers(layers: Iterable[Any], model_name: str, md5_list: list[str]) -> 
             _, _, _, _, md5, filename = records[0]
             file_path = get_file_path(filename)
             if not os.path.exists(file_path):
-                logger.warning("权重文件不存在: %s", file_path)
+                logger.warning("权重文件不存在: {}", file_path)
                 continue
             try:
                 with open(file_path, "rb") as source:
                     data = pickle.load(source)
             except (OSError, EOFError, pickle.UnpicklingError) as error:
-                logger.warning("读取权重缓存失败 %s: %s", file_path, error)
+                logger.warning("读取权重缓存失败 {}: {}", file_path, error)
                 continue
             if md5 not in data:
-                logger.warning("权重摘要不存在: %s", md5)
+                logger.warning("权重摘要不存在: {}", md5)
                 continue
             try:
                 layer.set_weights(data[md5])
             except (TypeError, ValueError) as error:
-                logger.warning("设置层权重失败 %s: %s", getattr(layer, "name", "unknown"), error)
+                logger.warning("设置层权重失败 {}: {}", getattr(layer, "name", "unknown"), error)
     finally:
         database.close()
