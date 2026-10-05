@@ -295,7 +295,7 @@ def load_layers(layers: Iterable[Any], model_name: str, md5_list: list[str]) -> 
                 logger.warning("权重摘要不存在: {}", md5)
                 continue
             try:
-                layer.set_weights(data[md5])
+                layer.set_weights(data)
             except (TypeError, ValueError) as error:
                 logger.warning("设置层权重失败 {}: {}", getattr(layer, "name", "unknown"), error)
     finally:
