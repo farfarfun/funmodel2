@@ -15,6 +15,9 @@
 - 使用参数化 SQL、farlog 和具体异常处理，避免数据损坏与诊断信息丢失。
 - `database/core.py` 的 4 处权重加载失败日志误用 stdlib logging 的 `%s` 占位符，
   farlog（loguru）不支持该语法，参数被静默丢弃；统一改为 `{}` 占位符。
+- `load_layers` 用 md5 字符串给数组列表 `data` 当下标（`data[md5]`），恒抛
+  `TypeError` 并被静默吞掉记录为警告，导致权重恢复从未真正生效；改为直接传入
+  `data`（主动排查发现，与 todo-list#864 finding 3 一致）。
 
 ### 变更
 
