@@ -2,15 +2,15 @@
 
 ## [Unreleased]
 
+## [0.1.1]
+
 ### 新增
 
 - 增加权重数据库和 YOLO 辅助 API 的正常路径测试。
 
 ### 修复
 
-- `requires-python` 下限由 `>=3.10` 提升至 `>=3.11`：Python 3.10 环境下 `yolo` extra（经
-  `funkeras`）会解析到 `keras==3.12.4`（受 GHSA 安全公告影响，< 3.15.0 均存在漏洞），3.11+
-  才能解析到已修复的 `keras==3.15.1`；提交更新后的 `uv.lock`。
+- `yolo` extra 的依赖约束保持由 `funkeras` 管理；项目的 Python 最低版本为 `>=3.10`。
 - 移除 import 阶段的本机路径和模型加载副作用，改为显式调用。
 - 使用参数化 SQL、farlog 和具体异常处理，避免数据损坏与诊断信息丢失。
 - `database/core.py` 的 4 处权重加载失败日志误用 stdlib logging 的 `%s` 占位符，
